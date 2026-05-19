@@ -46,6 +46,7 @@ from muniverse.data_generation._run_neuromotion import (
     generate_muaps,
     generate_spike_trains,
     load_cached_muaps,
+    select_optimal_electrode_columns,
 )
 from muniverse.data_generation.generate_configs import (
     MUSCLE_LABELS,
@@ -69,6 +70,7 @@ STAIRCASE_STEP_DEG = 10
 STAIRCASE_MAX_DEG  = 40
 STAIRCASE_HOLD_S   = 5.0        # also serves as the end bookend (hold at 0 °)
 STAIRCASE_RAMP_S   = 10.0
+DESIRED_COLS       = 10     # columns to select from 10×32 grid → 10×10 (100 ch)
 
 MODEL_PTH  = "./ckp/model_linear.pth"
 MUAP_PKL   = "./ckp/muap_examples.pkl"
@@ -288,7 +290,7 @@ def main(output_dir: str) -> None:
             _, spikes, _, _ = generate_spike_trains(mn_pool, effort_profile, FS)
 
             # Clean EMG — no noise added here
-            emg_clean = generate_emg_signal(
+            emg_full = generate_emg_signal(
                 muaps             = muaps,
                 spikes            = spikes,
                 time_samples      = len(effort_profile),
@@ -297,7 +299,11 @@ def main(output_dir: str) -> None:
                 noise_level_db    = None,
                 noise_seed        = None,
             )
-            # emg_clean shape: (n_samples, 320)
+            # emg_full shape: (n_samples, 320) — select 10×DESIRED_COLS centred on peak activity
+            emg_clean, sel_cols, center_col = select_optimal_electrode_columns(
+                emg_full, DESIRED_COLS
+            )
+            # emg_clean shape: (n_samples, 10*DESIRED_COLS)
 
             metadata = {
                 "subject_id":           sub_id,
@@ -314,7 +320,10 @@ def main(output_dir: str) -> None:
                 "fs":                   FS,
                 "n_channels":           emg_clean.shape[1],
                 "n_rows":               10,
-                "n_cols":               32,
+                "n_cols":               DESIRED_COLS,
+                "selected_columns":     sel_cols,
+                "center_column":        center_col,
+                "full_grid_n_cols":     32,
                 "n_motor_units":        num_mus,
                 "fibre_density":        int(fibre_density),
                 "rng_seed_spikes":      rng_seed,
